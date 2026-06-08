@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Article, Opinion, Rule, ScheduleItem, UserStats, DraftOpinion, ReviewRecord } from '@/types';
-import { mockArticles, mockOpinions, mockRules, mockSchedule, mockUserStats } from '@/data/mockData';
+import { mockArticles, mockOpinions, mockRules, mockSchedule, mockUserStats, reviewGroups } from '@/data/mockData';
 
 interface AppState {
   articles: Article[];
@@ -17,6 +17,8 @@ interface AppState {
   batchMode: boolean;
   searchMode: boolean;
   
+  currentReviewGroup: string;
+  
   setSelectedCategory: (category: string) => void;
   setSelectedPriority: (priority: string) => void;
   setSearchQuery: (query: string) => void;
@@ -25,12 +27,17 @@ interface AppState {
   selectAll: () => void;
   clearSelection: () => void;
   setBatchMode: (mode: boolean) => void;
+  setCurrentReviewGroup: (group: string) => void;
   
   approveArticle: (id: string, opinion: string) => void;
   rejectArticle: (id: string, opinion: string) => void;
   returnArticle: (id: string, opinion: string) => void;
   forwardArticle: (id: string, opinion: string, target: string) => void;
   batchApprove: () => void;
+  
+  professionalApprove: (id: string, opinion: string) => void;
+  professionalReject: (id: string, opinion: string) => void;
+  professionalReturn: (id: string, opinion: string) => void;
   
   setPublishTime: (id: string, publishTime: string) => void;
   
@@ -45,6 +52,9 @@ interface AppState {
   getSearchResults: () => Article[];
   getOverdueCount: () => number;
   getArticleById: (id: string) => Article | undefined;
+  getForwardedArticles: (group?: string) => Article[];
+  getScheduleByDate: (date: string) => ScheduleItem[];
+  getScheduleByCategory: (category: string, date?: string) => ScheduleItem[];
 }
 
 const loadFromStorage = <T>(key: string, defaultValue: T): T => {
@@ -71,12 +81,23 @@ const initArticles = (): Article[] => {
   }));
 };
 
+const initSchedule = (): ScheduleItem[] => {
+  return mockSchedule;
+};
+
+const addHistoryRecord = (article: Article, record: ReviewRecord): Article => {
+  return {
+    ...article,
+    reviewHistory: [...(article.reviewHistory || []), record],
+  };
+};
+
 export const useAppStore = create<AppState>((set, get) => ({
   articles: loadFromStorage('articles', initArticles()),
   opinions: loadFromStorage('opinions', mockOpinions),
   rules: mockRules,
-  schedule: mockSchedule,
-  userStats: mockUserStats,
+  schedule: loadFromStorage('schedule', initSchedule()),
+  userStats: loadFromStorage('userStats', mockUserStats),
   draftOpinions: loadFromStorage('draftOpinions', []),
   
   selectedCategory: '全部',
@@ -85,11 +106,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedIds: [],
   batchMode: false,
   searchMode: false,
+  currentReviewGroup: reviewGroups[0],
   
   setSelectedCategory: (category) => set({ selectedCategory: category }),
   setSelectedPriority: (priority) => set({ selectedPriority: priority }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchMode: (mode) => set({ searchMode: mode, searchQuery: '' }),
+  setCurrentReviewGroup: (group) => set({ currentReviewGroup: group }),
   
   toggleSelectArticle: (id) => set((state) => {
     const selected = state.selectedIds.includes(id)
@@ -115,22 +138,34 @@ export const useAppStore = create<AppState>((set, get) => ({
       reviewer: '张审核',
       time: new Date().toLocaleString('zh-CN'),
     };
-    const articles = state.articles.map((a) =>
-      a.id === id ? { ...a, status: 'approved' as const, reviewHistory: [...(a.reviewHistory || []), record] } : a
-    );
-    saveToStorage('articles', articles);
     
-    const schedule = [...state.schedule];
+    const articles = state.articles.map((a) =>
+      a.id === id ? addHistoryRecord(a, record) : a
+    );
+    
     const article = articles.find((a) => a.id === id);
-    if (article?.publishTime) {
-      schedule.push({
-        id: `sch-${article.id}`,
-        title: article.title,
-        category: article.category,
-        publishTime: article.publishTime.replace('T', ' '),
-        status: 'scheduled',
-      });
+    let schedule = [...state.schedule];
+    
+    if (article) {
+      const existingIndex = schedule.findIndex((s) => s.id === `sch-${id}`);
+      if (existingIndex >= 0) {
+        schedule[existingIndex] = {
+          ...schedule[existingIndex],
+          status: 'scheduled' as const,
+        };
+      } else if (article.publishTime) {
+        schedule.push({
+          id: `sch-${article.id}`,
+          title: article.title,
+          category: article.category,
+          publishTime: article.publishTime.replace('T', ' '),
+          status: 'scheduled',
+        });
+      }
     }
+    
+    saveToStorage('articles', articles);
+    saveToStorage('schedule', schedule);
     
     return {
       articles,
@@ -148,7 +183,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       time: new Date().toLocaleString('zh-CN'),
     };
     const articles = state.articles.map((a) =>
-      a.id === id ? { ...a, status: 'rejected' as const, reviewHistory: [...(a.reviewHistory || []), record] } : a
+      a.id === id ? addHistoryRecord(a, record) : a
     );
     saveToStorage('articles', articles);
     return { articles };
@@ -163,25 +198,105 @@ export const useAppStore = create<AppState>((set, get) => ({
       time: new Date().toLocaleString('zh-CN'),
     };
     const articles = state.articles.map((a) =>
-      a.id === id ? { ...a, status: 'returned' as const, reviewHistory: [...(a.reviewHistory || []), record] } : a
+      a.id === id ? addHistoryRecord(a, record) : a
     );
     saveToStorage('articles', articles);
     return { articles };
   }),
   
   forwardArticle: (id, opinion, target) => set((state) => {
+    const article = state.articles.find((a) => a.id === id);
+    const oldForwardedTo = article?.forwardedTo;
+    
     const record: ReviewRecord = {
       id: `r-${Date.now()}`,
-      action: 'forwarded',
+      action: oldForwardedTo ? 'forward_change' : 'forwarded',
       opinion,
       reviewer: '张审核',
       time: new Date().toLocaleString('zh-CN'),
       forwardedTo: target,
+      oldValue: oldForwardedTo,
+      newValue: target,
     };
+    
     const articles = state.articles.map((a) =>
       a.id === id
-        ? { ...a, status: 'forwarded' as const, forwardedTo: target, reviewHistory: [...(a.reviewHistory || []), record] }
+        ? { ...addHistoryRecord(a, record), status: 'forwarded' as const, forwardedTo: target }
         : a
+    );
+    saveToStorage('articles', articles);
+    return { articles };
+  }),
+  
+  professionalApprove: (id, opinion) => set((state) => {
+    const record: ReviewRecord = {
+      id: `r-${Date.now()}`,
+      action: 'approved',
+      opinion,
+      reviewer: '李专业审核',
+      time: new Date().toLocaleString('zh-CN'),
+    };
+    
+    const articles = state.articles.map((a) =>
+      a.id === id ? { ...addHistoryRecord(a, record), status: 'approved' as const } : a
+    );
+    
+    const article = articles.find((a) => a.id === id);
+    let schedule = [...state.schedule];
+    
+    if (article) {
+      const existingIndex = schedule.findIndex((s) => s.id === `sch-${id}`);
+      if (existingIndex >= 0) {
+        schedule[existingIndex] = {
+          ...schedule[existingIndex],
+          status: 'scheduled' as const,
+        };
+      } else if (article.publishTime) {
+        schedule.push({
+          id: `sch-${article.id}`,
+          title: article.title,
+          category: article.category,
+          publishTime: article.publishTime.replace('T', ' '),
+          status: 'scheduled',
+        });
+      }
+    }
+    
+    saveToStorage('articles', articles);
+    saveToStorage('schedule', schedule);
+    
+    return {
+      articles,
+      schedule,
+      userStats: { ...state.userStats, todayCount: state.userStats.todayCount + 1 },
+    };
+  }),
+  
+  professionalReject: (id, opinion) => set((state) => {
+    const record: ReviewRecord = {
+      id: `r-${Date.now()}`,
+      action: 'rejected',
+      opinion,
+      reviewer: '李专业审核',
+      time: new Date().toLocaleString('zh-CN'),
+    };
+    const articles = state.articles.map((a) =>
+      a.id === id ? { ...addHistoryRecord(a, record), status: 'rejected' as const } : a
+    );
+    saveToStorage('articles', articles);
+    return { articles };
+  }),
+  
+  professionalReturn: (id, opinion) => set((state) => {
+    const record: ReviewRecord = {
+      id: `r-${Date.now()}`,
+      action: 'returned',
+      opinion,
+      reviewer: '李专业审核',
+      time: new Date().toLocaleString('zh-CN'),
+    };
+    const articles = state.articles.map((a) =>
+      a.id === id ? { ...addHistoryRecord(a, record), status: 'returned' as const } : a
     );
     saveToStorage('articles', articles);
     return { articles };
@@ -199,7 +314,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           reviewer: '张审核',
           time: new Date().toLocaleString('zh-CN'),
         };
-        return { ...a, status: 'approved' as const, reviewHistory: [...(a.reviewHistory || []), record] };
+        return addHistoryRecord(a, record);
       }
       return a;
     });
@@ -214,22 +329,37 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   
   setPublishTime: (id, publishTime) => set((state) => {
-    const articles = state.articles.map((a) =>
-      a.id === id ? { ...a, publishTime } : a
-    );
-    saveToStorage('articles', articles);
+    const article = state.articles.find((a) => a.id === id);
+    const oldPublishTime = article?.publishTime;
     
-    const schedule = state.schedule.filter((s) => s.id !== `sch-${id}`);
-    const article = articles.find((a) => a.id === id);
-    if (article) {
+    const record: ReviewRecord = {
+      id: `r-${Date.now()}`,
+      action: 'publish_time_change',
+      opinion: oldPublishTime ? '修改发布时间' : '设置发布时间',
+      reviewer: '张审核',
+      time: new Date().toLocaleString('zh-CN'),
+      oldValue: oldPublishTime ? oldPublishTime.replace('T', ' ') : undefined,
+      newValue: publishTime.replace('T', ' '),
+    };
+    
+    const articles = state.articles.map((a) =>
+      a.id === id ? { ...addHistoryRecord(a, record), publishTime } : a
+    );
+    
+    let schedule = state.schedule.filter((s) => s.id !== `sch-${id}`);
+    const updatedArticle = articles.find((a) => a.id === id);
+    if (updatedArticle) {
       schedule.push({
         id: `sch-${id}`,
-        title: article.title,
-        category: article.category,
+        title: updatedArticle.title,
+        category: updatedArticle.category,
         publishTime: publishTime.replace('T', ' '),
-        status: 'scheduled',
+        status: updatedArticle.status === 'approved' ? 'scheduled' : 'scheduled',
       });
     }
+    
+    saveToStorage('articles', articles);
+    saveToStorage('schedule', schedule);
     
     return { articles, schedule };
   }),
@@ -304,5 +434,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   getArticleById: (id) => {
     return get().articles.find((a) => a.id === id);
+  },
+  
+  getForwardedArticles: (group) => {
+    const { articles } = get();
+    return articles.filter((a) => {
+      if (a.status !== 'forwarded') return false;
+      if (group && a.forwardedTo !== group) return false;
+      return true;
+    });
+  },
+  
+  getScheduleByDate: (date) => {
+    return get().schedule.filter((s) => s.publishTime.startsWith(date));
+  },
+  
+  getScheduleByCategory: (category, date) => {
+    const schedule = get().schedule;
+    return schedule.filter((s) => {
+      if (category !== '全部' && s.category !== category) return false;
+      if (date && !s.publishTime.startsWith(date)) return false;
+      return true;
+    });
   },
 }));

@@ -440,3 +440,17 @@ export const mockUserStats: UserStats = {
     { day: '周日', count: 4 },
   ],
 };
+
+export const reviewGroups = [
+  '时政审核组',
+  '财经审核组',
+  '文娱审核组',
+  '技术审核组',
+];
+
+export const reviewReviewers: Record<string, string[]> = {
+  '时政审核组': ['李专业审核', '王资深审核'],
+  '财经审核组': ['张财经审核', '陈财务专家'],
+  '文娱审核组': ['刘文娱审核', '赵创意审核'],
+  '技术审核组': ['孙技术审核', '周安全专家'],
+};

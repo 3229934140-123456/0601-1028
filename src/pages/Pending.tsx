@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, CheckSquare, Square, X, AlertTriangle, Zap, Clock, Image, Video, FileText } from 'lucide-react';
+import { Search, CheckSquare, Square, X, AlertTriangle, Zap, Clock, Image, Video, FileText, Users } from 'lucide-react';
 import Header from '@/components/Header';
 import ArticleCard from '@/components/ArticleCard';
 import { useAppStore } from '@/store/useAppStore';
-import { categories, priorityLabels, riskLevelLabels } from '@/data/mockData';
+import { categories, priorityLabels, riskLevelLabels, reviewGroups } from '@/data/mockData';
 import type { Article } from '@/types';
 
 export default function PendingPage() {
@@ -21,6 +21,7 @@ export default function PendingPage() {
     getFilteredArticles,
     getSearchResults,
     getOverdueCount,
+    getForwardedArticles,
     setSelectedCategory,
     setSelectedPriority,
     setSearchQuery,
@@ -34,6 +35,7 @@ export default function PendingPage() {
   const articles = getFilteredArticles();
   const searchResults = getSearchResults();
   const overdueCount = getOverdueCount();
+  const forwardedCount = getForwardedArticles().length;
   
   const lowRiskSelectedCount = selectedIds.filter((id) => {
     const article = articles.find((a) => a.id === id);
@@ -184,6 +186,28 @@ export default function PendingPage() {
           </>
         ) : (
           <>
+            {forwardedCount > 0 && (
+              <button
+                onClick={() => navigate('/professional')}
+                className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3 mb-4 flex items-center gap-3 active:bg-purple-100 transition-colors animate-fade-in"
+              >
+                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                  <Users size={20} className="text-purple-600" />
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-[14px] font-semibold text-purple-700">
+                    专业审核待处理
+                  </p>
+                  <p className="text-[12px] text-purple-600/70">
+                    {forwardedCount} 篇转交稿件等待专业审核
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 bg-purple-500 text-white text-[12px] rounded-full font-medium">
+                  {forwardedCount}
+                </span>
+              </button>
+            )}
+
             {overdueCount > 0 && (
               <div className="bg-danger-50 border border-danger-500/20 rounded-xl p-3 mb-4 flex items-center gap-3 animate-fade-in">
                 <div className="w-10 h-10 rounded-full bg-danger-100 flex items-center justify-center flex-shrink-0">

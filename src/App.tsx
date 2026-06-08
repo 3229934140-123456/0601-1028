@@ -7,10 +7,11 @@ import Opinions from '@/pages/Opinions';
 import Calendar from '@/pages/Calendar';
 import Rules from '@/pages/Rules';
 import Profile from '@/pages/Profile';
+import Professional from '@/pages/Professional';
 
 function AppContent() {
   const location = useLocation();
-  const showBottomNav = ['/', '/opinions', '/calendar', '/rules', '/profile'].includes(
+  const showBottomNav = ['/', '/professional', '/opinions', '/calendar', '/rules', '/profile'].includes(
     location.pathname
   );
 
@@ -18,6 +19,7 @@ function AppContent() {
     <div className="app-container">
       <Routes>
         <Route path="/" element={<Pending />} />
+        <Route path="/professional" element={<Professional />} />
         <Route path="/detail/:id" element={<Detail />} />
         <Route path="/compare/:id" element={<Compare />} />
         <Route path="/opinions" element={<Opinions />} />

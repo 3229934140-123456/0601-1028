@@ -1,12 +1,16 @@
-import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Clock, CheckCircle, Calendar as CalendarIcon } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, Clock, CheckCircle, Calendar as CalendarIcon, Filter } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAppStore } from '@/store/useAppStore';
+import { categories } from '@/data/mockData';
 
 export default function CalendarPage() {
   const schedule = useAppStore((state) => state.schedule);
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
   const [selectedDate, setSelectedDate] = useState<string>('2026-06-08');
+  const [selectedCategory, setSelectedCategory] = useState('全部');
+  const [selectedStatus, setSelectedStatus] = useState<'all' | 'scheduled' | 'published'>('all');
+  const [showFilter, setShowFilter] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -30,14 +34,24 @@ export default function CalendarPage() {
 
   const getScheduleCount = (day: number) => {
     const dateStr = formatDate(day);
-    return schedule.filter((s) => s.publishTime.startsWith(dateStr)).length;
+    return schedule.filter((s) => {
+      if (!s.publishTime.startsWith(dateStr)) return false;
+      if (selectedCategory !== '全部' && s.category !== selectedCategory) return false;
+      if (selectedStatus !== 'all' && s.status !== selectedStatus) return false;
+      return true;
+    }).length;
   };
 
   const getDaySchedule = (dateStr: string) => {
-    return schedule.filter((s) => s.publishTime.startsWith(dateStr));
+    return schedule.filter((s) => {
+      if (!s.publishTime.startsWith(dateStr)) return false;
+      if (selectedCategory !== '全部' && s.category !== selectedCategory) return false;
+      if (selectedStatus !== 'all' && s.status !== selectedStatus) return false;
+      return true;
+    }).sort((a, b) => a.publishTime.localeCompare(b.publishTime));
   };
 
-  const selectedDaySchedule = getDaySchedule(selectedDate);
+  const selectedDaySchedule = useMemo(() => getDaySchedule(selectedDate), [selectedDate, schedule, selectedCategory, selectedStatus]);
 
   const categoryColors: Record<string, string> = {
     '时政新闻': 'bg-red-100 text-red-600',
@@ -58,11 +72,49 @@ export default function CalendarPage() {
 
   const today = '2026-06-08';
 
+  const statusOptions = [
+    { value: 'all', label: '全部' },
+    { value: 'scheduled', label: '待发布' },
+    { value: 'published', label: '已发布' },
+  ];
+
+  const totalToday = schedule.filter((s) => s.publishTime.startsWith(today)).length;
+
   return (
     <div className="min-h-screen">
-      <Header title="栏目排期" />
+      <Header 
+        title="栏目排期" 
+        rightAction={
+          <button
+            onClick={() => setShowFilter(true)}
+            className="flex items-center gap-1 text-[13px] text-primary-600 font-medium"
+          >
+            <Filter size={16} />
+            筛选
+          </button>
+        }
+      />
 
       <div className="page-content">
+        {selectedCategory !== '全部' || selectedStatus !== 'all' ? (
+          <div className="bg-primary-50 border border-primary-200 rounded-xl p-2.5 mb-3 flex items-center justify-between">
+            <span className="text-[12px] text-primary-700">
+              筛选：{selectedCategory !== '全部' ? selectedCategory : ''}
+              {selectedCategory !== '全部' && selectedStatus !== 'all' ? ' · ' : ''}
+              {selectedStatus !== 'all' ? (selectedStatus === 'scheduled' ? '待发布' : '已发布') : ''}
+            </span>
+            <button
+              onClick={() => {
+                setSelectedCategory('全部');
+                setSelectedStatus('all');
+              }}
+              className="text-[12px] text-primary-600 font-medium"
+            >
+              清除
+            </button>
+          </div>
+        ) : null}
+
         <div className="bg-white rounded-2xl shadow-card p-4 mb-4">
           <div className="flex items-center justify-between mb-4">
             <button
@@ -211,6 +263,77 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+
+      {showFilter && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center animate-fade-in"
+          onClick={() => setShowFilter(false)}
+        >
+          <div
+            className="w-full max-w-[480px] bg-white rounded-t-3xl p-4 animate-slide-in-right"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-1 bg-neutral-200 rounded-full mx-auto mb-4" />
+            <h3 className="text-[16px] font-semibold text-neutral-900 mb-4">筛选排期</h3>
+            
+            <div className="mb-4">
+              <p className="text-[13px] font-medium text-neutral-700 mb-2">栏目</p>
+              <div className="flex flex-wrap gap-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-3 py-1.5 rounded-full text-[12px] font-medium ${
+                      selectedCategory === cat
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-neutral-100 text-neutral-600'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-[13px] font-medium text-neutral-700 mb-2">状态</p>
+              <div className="flex gap-2">
+                {statusOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSelectedStatus(opt.value as 'all' | 'scheduled' | 'published')}
+                    className={`px-4 py-1.5 rounded-full text-[12px] font-medium ${
+                      selectedStatus === opt.value
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-neutral-100 text-neutral-600'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setSelectedCategory('全部');
+                  setSelectedStatus('all');
+                }}
+                className="flex-1 h-11 bg-neutral-100 text-neutral-700 rounded-xl text-[14px] font-medium"
+              >
+                重置
+              </button>
+              <button
+                onClick={() => setShowFilter(false)}
+                className="flex-1 h-11 bg-primary-600 text-white rounded-xl text-[14px] font-medium"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

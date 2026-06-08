@@ -6,11 +6,13 @@ export type ScheduleStatus = 'scheduled' | 'published';
 
 export interface ReviewRecord {
   id: string;
-  action: 'approved' | 'rejected' | 'returned' | 'forwarded';
+  action: 'approved' | 'rejected' | 'returned' | 'forwarded' | 'publish_time_change' | 'forward_change';
   opinion: string;
   reviewer: string;
   time: string;
   forwardedTo?: string;
+  oldValue?: string;
+  newValue?: string;
 }
 
 export interface Article {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Clock,
   User,
@@ -21,12 +21,15 @@ import {
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAppStore } from '@/store/useAppStore';
-import { priorityLabels, riskLevelLabels } from '@/data/mockData';
+import { priorityLabels, riskLevelLabels, reviewGroups } from '@/data/mockData';
 import type { SensitiveSection } from '@/types';
 
 export default function DetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isProfessionalMode = searchParams.get('mode') === 'professional';
+  
   const getArticleById = useAppStore((state) => state.getArticleById);
   const opinions = useAppStore((state) => state.opinions);
   const approveArticle = useAppStore((state) => state.approveArticle);
@@ -39,6 +42,9 @@ export default function DetailPage() {
   const removeDraftOpinion = useAppStore((state) => state.removeDraftOpinion);
   const toggleFavoriteOpinion = useAppStore((state) => state.toggleFavoriteOpinion);
   const incrementOpinionUsage = useAppStore((state) => state.incrementOpinionUsage);
+  const professionalApprove = useAppStore((state) => state.professionalApprove);
+  const professionalReject = useAppStore((state) => state.professionalReject);
+  const professionalReturn = useAppStore((state) => state.professionalReturn);
 
   const article = id ? getArticleById(id) : undefined;
 
@@ -49,6 +55,7 @@ export default function DetailPage() {
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [publishDate, setPublishDate] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [showForwardPicker, setShowForwardPicker] = useState(false);
 
   const draft = id ? getDraftOpinion(id) : undefined;
 
@@ -130,25 +137,52 @@ export default function DetailPage() {
 
   const handleApprove = () => {
     if (id) {
-      approveArticle(id, opinion);
+      if (isProfessionalMode) {
+        professionalApprove(id, opinion);
+      } else {
+        approveArticle(id, opinion);
+      }
       if (draft) removeDraftOpinion(id);
-      navigate('/');
+      setOpinion('');
+      if (isProfessionalMode) {
+        navigate('/professional');
+      } else {
+        navigate('/');
+      }
     }
   };
 
   const handleReject = () => {
     if (id) {
-      rejectArticle(id, opinion);
+      if (isProfessionalMode) {
+        professionalReject(id, opinion);
+      } else {
+        rejectArticle(id, opinion);
+      }
       if (draft) removeDraftOpinion(id);
-      navigate('/');
+      setOpinion('');
+      if (isProfessionalMode) {
+        navigate('/professional');
+      } else {
+        navigate('/');
+      }
     }
   };
 
   const handleReturn = () => {
     if (id) {
-      returnArticle(id, opinion);
+      if (isProfessionalMode) {
+        professionalReturn(id, opinion);
+      } else {
+        returnArticle(id, opinion);
+      }
       if (draft) removeDraftOpinion(id);
-      navigate('/');
+      setOpinion('');
+      if (isProfessionalMode) {
+        navigate('/professional');
+      } else {
+        navigate('/');
+      }
     }
   };
 
@@ -157,7 +191,7 @@ export default function DetailPage() {
       forwardArticle(id, opinion, target);
       if (draft) removeDraftOpinion(id);
       setShowActionSheet(false);
-      navigate('/');
+      setOpinion('');
     }
   };
 
@@ -182,7 +216,21 @@ export default function DetailPage() {
 
   const favoriteOpinions = opinions.filter((o) => o.isFavorite);
 
-  const isReadOnly = article.status !== 'pending';
+  const isPending = article.status === 'pending';
+  const isForwarded = article.status === 'forwarded';
+  const isProcessed = !isPending && !isForwarded;
+  const canEdit = isProfessionalMode ? isForwarded : isPending;
+  const isReadOnly = !canEdit;
+
+  const getForwardInfo = () => {
+    if (!article.forwardedTo || !article.reviewHistory) return null;
+    const forwardRecord = [...article.reviewHistory].reverse().find(
+      (r) => r.action === 'forwarded' || r.action === 'forward_change'
+    );
+    return forwardRecord || null;
+  };
+
+  const forwardInfo = getForwardInfo();
 
   const getActionIcon = (action: string) => {
     switch (action) {
@@ -190,6 +238,8 @@ export default function DetailPage() {
       case 'rejected': return <XCircle size={16} className="text-danger-500" />;
       case 'returned': return <RotateIcon size={16} className="text-neutral-500" />;
       case 'forwarded': return <Forward size={16} className="text-purple-500" />;
+      case 'forward_change': return <Forward size={16} className="text-purple-500" />;
+      case 'publish_time_change': return <CalendarIcon size={16} className="text-primary-500" />;
       default: return null;
     }
   };
@@ -200,6 +250,8 @@ export default function DetailPage() {
       case 'rejected': return '驳回';
       case 'returned': return '退回修改';
       case 'forwarded': return '转交专业审核';
+      case 'forward_change': return '变更转交对象';
+      case 'publish_time_change': return '设置发布时间';
       default: return action;
     }
   };
@@ -261,13 +313,38 @@ export default function DetailPage() {
           </div>
 
           {article.forwardedTo && (
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4 flex items-center gap-3">
-              <Forward size={20} className="text-purple-600" />
-              <div>
-                <p className="text-[13px] font-medium text-purple-700">
-                  已转交给：{article.forwardedTo}
-                </p>
-                <p className="text-[12px] text-purple-600/70">等待专业审核人员处理</p>
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+              <div className="flex items-start gap-3">
+                <Forward size={20} className="text-purple-600 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-[13px] font-medium text-purple-700 mb-1">
+                    {isProfessionalMode ? '由审核组转交' : `已转交给：${article.forwardedTo}`}
+                  </p>
+                  {forwardInfo && (
+                    <>
+                      <p className="text-[12px] text-purple-600/80 mb-1">
+                        转交时间：{forwardInfo.time}
+                      </p>
+                      <p className="text-[12px] text-purple-600/80">
+                        转交人：{forwardInfo.reviewer}
+                      </p>
+                      {forwardInfo.opinion && (
+                        <p className="text-[12px] text-purple-700 mt-2 pt-2 border-t border-purple-200/50">
+                          意见：{forwardInfo.opinion}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {!isProfessionalMode && !isProcessed && (
+                    <button
+                      onClick={() => setShowForwardPicker(true)}
+                      className="text-[12px] text-purple-600 font-medium mt-2 flex items-center gap-1"
+                    >
+                      <ExternalLink size={12} />
+                      重新选择审核组
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -406,7 +483,33 @@ export default function DetailPage() {
         </div>
       </div>
 
-      {!isReadOnly && (
+      {isProcessed ? (
+        <div className="fixed bottom-[60px] left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-neutral-200 px-4 py-3 z-40">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowHistory(true)}
+              className="flex-1 h-11 bg-neutral-100 text-neutral-700 rounded-xl text-[13px] font-medium active:bg-neutral-200 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <History size={18} />
+              审核记录
+            </button>
+            <button
+              onClick={() => navigate(`/compare/${id}`)}
+              className="flex-1 h-11 bg-neutral-100 text-neutral-700 rounded-xl text-[13px] font-medium active:bg-neutral-200 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <GitCompare size={18} />
+              版本对比
+            </button>
+            <button
+              onClick={() => navigate('/calendar')}
+              className="flex-1 h-11 bg-primary-50 text-primary-600 rounded-xl text-[13px] font-medium active:bg-primary-100 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <CalendarIcon size={18} />
+              查看排期
+            </button>
+          </div>
+        </div>
+      ) : canEdit ? (
         <div className="fixed bottom-[60px] left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-neutral-200 px-4 py-3 z-40">
           <div className="flex items-center gap-3">
             <button
@@ -428,7 +531,7 @@ export default function DetailPage() {
               className="flex-1 h-11 bg-success-500 text-white rounded-xl text-[14px] font-medium active:bg-success-600 transition-colors flex items-center justify-center gap-1.5"
             >
               <Send size={18} />
-              通过
+              {isProfessionalMode ? '专业通过' : '通过'}
             </button>
           </div>
           <div className="flex items-center justify-center gap-4 mt-2">
@@ -439,16 +542,18 @@ export default function DetailPage() {
               <CalendarIcon size={14} />
               {publishDate ? `发布时间: ${publishDate.replace('T', ' ')}` : '设置发布时间'}
             </button>
-            <button
-              onClick={() => setShowActionSheet(true)}
-              className="flex items-center gap-1 text-[12px] text-primary-600"
-            >
-              <ExternalLink size={14} />
-              转交专业审核
-            </button>
+            {!isProfessionalMode && (
+              <button
+                onClick={() => setShowActionSheet(true)}
+                className="flex items-center gap-1 text-[12px] text-primary-600"
+              >
+                <ExternalLink size={14} />
+                转交专业审核
+              </button>
+            )}
           </div>
         </div>
-      )}
+      ) : null}
 
       {activeSensitive && (
         <div
@@ -600,38 +705,39 @@ export default function DetailPage() {
         </div>
       )}
 
-      {showActionSheet && (
+      {(showActionSheet || showForwardPicker) && (
         <div
           className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center animate-fade-in"
-          onClick={() => setShowActionSheet(false)}
+          onClick={() => {
+            setShowActionSheet(false);
+            setShowForwardPicker(false);
+          }}
         >
           <div
             className="w-full max-w-[480px] bg-neutral-100 rounded-t-3xl p-4 space-y-2 animate-slide-in-right"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-[12px] text-neutral-500 text-center pb-2">选择转交对象</p>
+            <p className="text-[12px] text-neutral-500 text-center pb-2">
+              {showForwardPicker ? '重新选择审核组' : '选择转交对象'}
+            </p>
             <div className="bg-white rounded-2xl overflow-hidden">
-              <button
-                onClick={() => handleForward('内容安全审核组')}
-                className="w-full h-12 text-[15px] text-primary-600 font-medium border-b border-neutral-100"
-              >
-                转交给内容安全审核组
-              </button>
-              <button
-                onClick={() => handleForward('法律合规组')}
-                className="w-full h-12 text-[15px] text-primary-600 font-medium border-b border-neutral-100"
-              >
-                转交给法律合规组
-              </button>
-              <button
-                onClick={() => handleForward('专业编辑审核')}
-                className="w-full h-12 text-[15px] text-primary-600 font-medium"
-              >
-                转交给专业编辑审核
-              </button>
+              {reviewGroups.map((group, idx) => (
+                <button
+                  key={group}
+                  onClick={() => handleForward(group)}
+                  className={`w-full h-12 text-[15px] text-primary-600 font-medium ${
+                    idx < reviewGroups.length - 1 ? 'border-b border-neutral-100' : ''
+                  }`}
+                >
+                  转交给{group}
+                </button>
+              ))}
             </div>
             <button
-              onClick={() => setShowActionSheet(false)}
+              onClick={() => {
+                setShowActionSheet(false);
+                setShowForwardPicker(false);
+              }}
               className="w-full h-12 bg-white rounded-2xl text-[15px] text-neutral-700 font-medium"
             >
               取消
@@ -677,11 +783,31 @@ export default function DetailPage() {
                         <span className="text-[11px] text-neutral-400">{record.time}</span>
                       </div>
                       <p className="text-[12px] text-neutral-600">
-                        审核人：{record.reviewer}
+                        操作人：{record.reviewer}
                       </p>
                       {record.forwardedTo && (
                         <p className="text-[12px] text-purple-600 mt-1">
                           转交给：{record.forwardedTo}
+                        </p>
+                      )}
+                      {record.action === 'publish_time_change' && record.oldValue && (
+                        <p className="text-[12px] text-neutral-500 mt-1">
+                          原时间：{record.oldValue}
+                        </p>
+                      )}
+                      {record.action === 'publish_time_change' && record.newValue && (
+                        <p className="text-[12px] text-primary-600 mt-1">
+                          新时间：{record.newValue}
+                        </p>
+                      )}
+                      {record.action === 'forward_change' && record.oldValue && (
+                        <p className="text-[12px] text-neutral-500 mt-1">
+                          原审核组：{record.oldValue}
+                        </p>
+                      )}
+                      {record.action === 'forward_change' && record.newValue && (
+                        <p className="text-[12px] text-purple-600 mt-1">
+                          新审核组：{record.newValue}
                         </p>
                       )}
                       {record.opinion && (
