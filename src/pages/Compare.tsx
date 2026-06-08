@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronDown, ArrowLeftRight, Columns, Rows } from 'lucide-react';
+import { ChevronDown, ArrowLeftRight, Columns, Rows, FileText, Info } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -8,8 +8,8 @@ type DiffMode = 'split' | 'unified';
 
 export default function ComparePage() {
   const { id } = useParams<{ id: string }>();
-  const articles = useAppStore((state) => state.articles);
-  const article = articles.find((a) => a.id === id);
+  const getArticleById = useAppStore((state) => state.getArticleById);
+  const article = id ? getArticleById(id) : undefined;
 
   const [leftVersion, setLeftVersion] = useState(0);
   const [rightVersion, setRightVersion] = useState(1);
@@ -18,9 +18,10 @@ export default function ComparePage() {
   const [showRightPicker, setShowRightPicker] = useState(false);
 
   const versions = article?.versions || [];
+  const hasMultipleVersions = versions.length >= 2;
 
   const diffResult = useMemo(() => {
-    if (versions.length < 2) return null;
+    if (!hasMultipleVersions) return null;
     
     const oldText = versions[leftVersion]?.content || '';
     const newText = versions[rightVersion]?.content || '';
@@ -43,7 +44,7 @@ export default function ComparePage() {
         key: `new-${idx}`,
       })),
     };
-  }, [versions, leftVersion, rightVersion]);
+  }, [versions, leftVersion, rightVersion, hasMultipleVersions]);
 
   if (!article) {
     return (
@@ -64,25 +65,34 @@ export default function ComparePage() {
           </h2>
           
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowLeftPicker(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-neutral-100 rounded-lg text-[13px] text-neutral-700"
-              >
-                <span className="font-medium">V{versions[leftVersion]?.version}</span>
-                <ChevronDown size={14} />
-              </button>
-              
-              <ArrowLeftRight size={18} className="text-neutral-400" />
-              
-              <button
-                onClick={() => setShowRightPicker(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-primary-100 rounded-lg text-[13px] text-primary-700"
-              >
-                <span className="font-medium">V{versions[rightVersion]?.version}</span>
-                <ChevronDown size={14} />
-              </button>
-            </div>
+            {hasMultipleVersions ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowLeftPicker(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-neutral-100 rounded-lg text-[13px] text-neutral-700"
+                >
+                  <span className="font-medium">V{versions[leftVersion]?.version}</span>
+                  <ChevronDown size={14} />
+                </button>
+                
+                <ArrowLeftRight size={18} className="text-neutral-400" />
+                
+                <button
+                  onClick={() => setShowRightPicker(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-primary-100 rounded-lg text-[13px] text-primary-700"
+                >
+                  <span className="font-medium">V{versions[rightVersion]?.version}</span>
+                  <ChevronDown size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-medium text-neutral-700">V{versions[0]?.version || 1}</span>
+                <span className="px-2 py-0.5 bg-primary-100 text-primary-600 text-[11px] rounded-full font-medium">
+                  当前版本
+                </span>
+              </div>
+            )}
             
             <div className="flex bg-neutral-100 rounded-lg p-0.5">
               <button
@@ -104,19 +114,21 @@ export default function ComparePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 text-[12px] text-neutral-500">
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-danger-100 border border-danger-300"></div>
-              <span>删除内容</span>
+          {hasMultipleVersions && (
+            <div className="flex items-center gap-4 text-[12px] text-neutral-500">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-danger-100 border border-danger-300"></div>
+                <span>删除内容</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-success-100 border border-success-300"></div>
+                <span>新增内容</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-success-100 border border-success-300"></div>
-              <span>新增内容</span>
-            </div>
-          </div>
+          )}
         </div>
 
-        {diffResult && (
+        {hasMultipleVersions && diffResult ? (
           <div className="bg-white rounded-2xl shadow-card overflow-hidden">
             {diffMode === 'split' ? (
               <div className="grid grid-cols-2 divide-x divide-neutral-200">
@@ -180,6 +192,27 @@ export default function ComparePage() {
                 </p>
               </div>
             )}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-card p-6">
+            <div className="flex flex-col items-center py-6 text-neutral-400 mb-4">
+              <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mb-4">
+                <Info size={28} className="text-neutral-300" />
+              </div>
+              <p className="text-[14px] font-medium text-neutral-600 mb-1">当前稿件暂无可对比版本</p>
+              <p className="text-[12px] text-neutral-400">仅存在一个版本，以下为当前版本内容</p>
+            </div>
+            <div className="border-t border-neutral-100 pt-4">
+              <div className="text-[12px] text-neutral-500 mb-3 pb-2 border-b border-neutral-100">
+                <div className="flex items-center justify-between">
+                  <span>V{versions[0]?.version || 1} · {versions[0]?.editor}</span>
+                  <span>{versions[0]?.submitTime}</span>
+                </div>
+              </div>
+              <p className="text-[14px] leading-7 text-neutral-700">
+                {versions[0]?.content || '暂无内容'}
+              </p>
+            </div>
           </div>
         )}
 

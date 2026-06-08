@@ -1,8 +1,17 @@
 export type Priority = 'high' | 'medium' | 'low';
-export type ArticleStatus = 'pending' | 'approved' | 'rejected' | 'returned';
+export type ArticleStatus = 'pending' | 'approved' | 'rejected' | 'returned' | 'forwarded';
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type ContentType = 'article' | 'image' | 'video';
 export type ScheduleStatus = 'scheduled' | 'published';
+
+export interface ReviewRecord {
+  id: string;
+  action: 'approved' | 'rejected' | 'returned' | 'forwarded';
+  opinion: string;
+  reviewer: string;
+  time: string;
+  forwardedTo?: string;
+}
 
 export interface Article {
   id: string;
@@ -22,6 +31,8 @@ export interface Article {
   sensitiveSections: SensitiveSection[];
   riskLevel: RiskLevel;
   publishTime?: string;
+  forwardedTo?: string;
+  reviewHistory?: ReviewRecord[];
 }
 
 export interface Version {

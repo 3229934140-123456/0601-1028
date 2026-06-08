@@ -13,6 +13,11 @@ import {
   ChevronDown,
   Star,
   ExternalLink,
+  History,
+  CheckCircle,
+  XCircle,
+  RotateCcw as RotateIcon,
+  Forward,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAppStore } from '@/store/useAppStore';
@@ -22,24 +27,28 @@ import type { SensitiveSection } from '@/types';
 export default function DetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const articles = useAppStore((state) => state.articles);
+  const getArticleById = useAppStore((state) => state.getArticleById);
   const opinions = useAppStore((state) => state.opinions);
   const approveArticle = useAppStore((state) => state.approveArticle);
   const rejectArticle = useAppStore((state) => state.rejectArticle);
   const returnArticle = useAppStore((state) => state.returnArticle);
+  const forwardArticle = useAppStore((state) => state.forwardArticle);
+  const setPublishTime = useAppStore((state) => state.setPublishTime);
   const saveDraftOpinion = useAppStore((state) => state.saveDraftOpinion);
   const getDraftOpinion = useAppStore((state) => state.getDraftOpinion);
   const removeDraftOpinion = useAppStore((state) => state.removeDraftOpinion);
   const toggleFavoriteOpinion = useAppStore((state) => state.toggleFavoriteOpinion);
+  const incrementOpinionUsage = useAppStore((state) => state.incrementOpinionUsage);
 
-  const article = articles.find((a) => a.id === id);
+  const article = id ? getArticleById(id) : undefined;
+
   const [opinion, setOpinion] = useState('');
   const [showOpinionPicker, setShowOpinionPicker] = useState(false);
   const [activeSensitive, setActiveSensitive] = useState<SensitiveSection | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [publishDate, setPublishDate] = useState('');
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const draft = id ? getDraftOpinion(id) : undefined;
 
@@ -48,6 +57,12 @@ export default function DetailPage() {
       setOpinion(draft.content);
     }
   }, [draft]);
+
+  useEffect(() => {
+    if (article?.publishTime) {
+      setPublishDate(article.publishTime);
+    }
+  }, [article?.publishTime]);
 
   if (!article) {
     return (
@@ -67,6 +82,14 @@ export default function DetailPage() {
     high: 'bg-danger-50 text-danger-600',
     medium: 'bg-warning-50 text-warning-600',
     low: 'bg-success-50 text-success-600',
+  };
+
+  const statusLabels: Record<string, { label: string; color: string }> = {
+    pending: { label: '待审核', color: 'bg-warning-50 text-warning-600' },
+    approved: { label: '已通过', color: 'bg-success-50 text-success-600' },
+    rejected: { label: '已驳回', color: 'bg-danger-50 text-danger-600' },
+    returned: { label: '已退回', color: 'bg-neutral-100 text-neutral-600' },
+    forwarded: { label: '已转交', color: 'bg-purple-50 text-purple-600' },
   };
 
   const renderContentWithHighlights = () => {
@@ -129,18 +152,57 @@ export default function DetailPage() {
     }
   };
 
+  const handleForward = (target: string) => {
+    if (id) {
+      forwardArticle(id, opinion, target);
+      if (draft) removeDraftOpinion(id);
+      setShowActionSheet(false);
+      navigate('/');
+    }
+  };
+
   const handleSaveDraft = () => {
     if (id) {
       saveDraftOpinion(id, opinion);
     }
   };
 
-  const insertOpinion = (text: string) => {
+  const handleSetPublishTime = () => {
+    if (id && publishDate) {
+      setPublishTime(id, publishDate);
+      setShowSchedulePicker(false);
+    }
+  };
+
+  const insertOpinion = (opId: string, text: string) => {
     setOpinion((prev) => (prev ? prev + '\n' + text : text));
+    incrementOpinionUsage(opId);
     setShowOpinionPicker(false);
   };
 
   const favoriteOpinions = opinions.filter((o) => o.isFavorite);
+
+  const isReadOnly = article.status !== 'pending';
+
+  const getActionIcon = (action: string) => {
+    switch (action) {
+      case 'approved': return <CheckCircle size={16} className="text-success-500" />;
+      case 'rejected': return <XCircle size={16} className="text-danger-500" />;
+      case 'returned': return <RotateIcon size={16} className="text-neutral-500" />;
+      case 'forwarded': return <Forward size={16} className="text-purple-500" />;
+      default: return null;
+    }
+  };
+
+  const getActionLabel = (action: string) => {
+    switch (action) {
+      case 'approved': return '通过';
+      case 'rejected': return '驳回';
+      case 'returned': return '退回修改';
+      case 'forwarded': return '转交专业审核';
+      default: return action;
+    }
+  };
 
   return (
     <div className="min-h-screen pb-[180px]">
@@ -149,23 +211,35 @@ export default function DetailPage() {
         showBack
         showMore
         rightAction={
-          <button
-            onClick={() => navigate(`/compare/${id}`)}
-            className="flex items-center gap-1 text-[13px] text-primary-600 font-medium"
-          >
-            <GitCompare size={16} />
-            对比
-          </button>
+          <div className="flex items-center gap-2">
+            {article.reviewHistory?.length && article.reviewHistory.length > 0 && (
+              <button
+                onClick={() => setShowHistory(true)}
+                className="w-10 h-10 -mr-2 flex items-center justify-center text-primary-600"
+              >
+                <History size={20} />
+              </button>
+            )}
+            <button
+              onClick={() => navigate(`/compare/${id}`)}
+              className="flex items-center gap-1 text-[13px] text-primary-600 font-medium"
+            >
+              <GitCompare size={16} />
+              对比
+            </button>
+          </div>
         }
       />
 
       <div className="page-content">
         <div className="bg-white rounded-2xl shadow-card p-5 mb-4">
-          <h1 className="text-[20px] font-bold text-neutral-900 leading-tight mb-3">
-            {article.title}
-          </h1>
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <h1 className="text-[20px] font-bold text-neutral-900 leading-tight flex-1">
+              {article.title}
+            </h1>
+          </div>
           
-          <div className="flex items-center gap-3 flex-wrap mb-4">
+          <div className="flex items-center gap-2 flex-wrap mb-4">
             <span className="px-2.5 py-1 bg-neutral-100 text-neutral-600 text-[12px] rounded-full font-medium">
               {article.category}
             </span>
@@ -175,6 +249,9 @@ export default function DetailPage() {
             <span className={`px-2.5 py-1 text-[12px] rounded-full font-medium ${riskColors[article.riskLevel]}`}>
               {riskLevelLabels[article.riskLevel]}风险
             </span>
+            <span className={`px-2.5 py-1 text-[12px] rounded-full font-medium ${statusLabels[article.status].color}`}>
+              {statusLabels[article.status].label}
+            </span>
             {article.isOverdue && (
               <span className="px-2.5 py-1 bg-danger-50 text-danger-600 text-[12px] rounded-full font-medium flex items-center gap-1">
                 <AlertTriangle size={12} />
@@ -182,6 +259,18 @@ export default function DetailPage() {
               </span>
             )}
           </div>
+
+          {article.forwardedTo && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4 flex items-center gap-3">
+              <Forward size={20} className="text-purple-600" />
+              <div>
+                <p className="text-[13px] font-medium text-purple-700">
+                  已转交给：{article.forwardedTo}
+                </p>
+                <p className="text-[12px] text-purple-600/70">等待专业审核人员处理</p>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-4 text-[13px] text-neutral-500 pb-4 border-b border-neutral-100">
             <div className="flex items-center gap-1.5">
@@ -193,6 +282,15 @@ export default function DetailPage() {
               <span>{article.submitTime}</span>
             </div>
           </div>
+
+          {article.publishTime && (
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-neutral-50">
+              <CalendarIcon size={14} className="text-primary-500" />
+              <span className="text-[12px] text-neutral-600">
+                预定发布时间：{article.publishTime.replace('T', ' ')}
+              </span>
+            </div>
+          )}
         </div>
 
         {article.sensitiveSections.length > 0 && (
@@ -244,81 +342,113 @@ export default function DetailPage() {
           </div>
         </div>
 
+        {article.reviewHistory?.length && article.reviewHistory.length > 0 && (
+          <button
+            onClick={() => setShowHistory(true)}
+            className="w-full bg-white rounded-2xl shadow-card p-4 mb-4 flex items-center gap-3 active:bg-neutral-50"
+          >
+            <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center">
+              <History size={18} className="text-primary-600" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-[14px] font-medium text-neutral-900">审核历史</p>
+              <p className="text-[12px] text-neutral-500">共 {article.reviewHistory.length} 条记录</p>
+            </div>
+            <ChevronDown size={18} className="text-neutral-400 -rotate-90" />
+          </button>
+        )}
+
         <div className="bg-white rounded-2xl shadow-card p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[14px] font-semibold text-neutral-900">审核意见</h3>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowOpinionPicker(true)}
-                className="text-[12px] text-primary-600 flex items-center gap-1"
-              >
-                <Star size={14} />
-                常用意见
-              </button>
-              <button
-                onClick={handleSaveDraft}
-                className="text-[12px] text-neutral-500 flex items-center gap-1"
-              >
-                <Save size={14} />
-                暂存
-              </button>
+              {!isReadOnly && (
+                <>
+                  <button
+                    onClick={() => setShowOpinionPicker(true)}
+                    className="text-[12px] text-primary-600 flex items-center gap-1"
+                  >
+                    <Star size={14} />
+                    常用意见
+                  </button>
+                  <button
+                    onClick={handleSaveDraft}
+                    className="text-[12px] text-neutral-500 flex items-center gap-1"
+                  >
+                    <Save size={14} />
+                    暂存
+                  </button>
+                </>
+              )}
             </div>
           </div>
-          <textarea
-            value={opinion}
-            onChange={(e) => setOpinion(e.target.value)}
-            placeholder="请输入审核意见..."
-            className="w-full h-24 px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-[14px] text-neutral-800 placeholder:text-neutral-400 resize-none focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all"
-          />
-          {draft && (
-            <p className="text-[12px] text-neutral-400 mt-2">
-              上次暂存: {new Date(draft.savedAt).toLocaleString('zh-CN')}
-            </p>
+          {isReadOnly ? (
+            <div className="p-3 bg-neutral-50 rounded-xl text-[14px] text-neutral-600">
+              {article.reviewHistory?.length && article.reviewHistory.length > 0
+                ? article.reviewHistory[article.reviewHistory.length - 1].opinion || '（无审核意见）'
+                : '（无审核意见）'}
+            </div>
+          ) : (
+            <>
+              <textarea
+                value={opinion}
+                onChange={(e) => setOpinion(e.target.value)}
+                placeholder="请输入审核意见..."
+                className="w-full h-24 px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-[14px] text-neutral-800 placeholder:text-neutral-400 resize-none focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all"
+              />
+              {draft && (
+                <p className="text-[12px] text-neutral-400 mt-2">
+                  上次暂存: {new Date(draft.savedAt).toLocaleString('zh-CN')}
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      <div className="fixed bottom-[60px] left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-neutral-200 px-4 py-3 z-40">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleReturn}
-            className="flex-1 h-11 bg-neutral-100 text-neutral-700 rounded-xl text-[14px] font-medium active:bg-neutral-200 transition-colors flex items-center justify-center gap-1.5"
-          >
-            <RotateCcw size={18} />
-            退回修改
-          </button>
-          <button
-            onClick={handleReject}
-            className="flex-1 h-11 bg-danger-500 text-white rounded-xl text-[14px] font-medium active:bg-danger-600 transition-colors flex items-center justify-center gap-1.5"
-          >
-            <X size={18} />
-            驳回
-          </button>
-          <button
-            onClick={handleApprove}
-            className="flex-1 h-11 bg-success-500 text-white rounded-xl text-[14px] font-medium active:bg-success-600 transition-colors flex items-center justify-center gap-1.5"
-          >
-            <Send size={18} />
-            通过
-          </button>
+      {!isReadOnly && (
+        <div className="fixed bottom-[60px] left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-neutral-200 px-4 py-3 z-40">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleReturn}
+              className="flex-1 h-11 bg-neutral-100 text-neutral-700 rounded-xl text-[14px] font-medium active:bg-neutral-200 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <RotateCcw size={18} />
+              退回修改
+            </button>
+            <button
+              onClick={handleReject}
+              className="flex-1 h-11 bg-danger-500 text-white rounded-xl text-[14px] font-medium active:bg-danger-600 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <X size={18} />
+              驳回
+            </button>
+            <button
+              onClick={handleApprove}
+              className="flex-1 h-11 bg-success-500 text-white rounded-xl text-[14px] font-medium active:bg-success-600 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <Send size={18} />
+              通过
+            </button>
+          </div>
+          <div className="flex items-center justify-center gap-4 mt-2">
+            <button
+              onClick={() => setShowSchedulePicker(true)}
+              className="flex items-center gap-1 text-[12px] text-neutral-500"
+            >
+              <CalendarIcon size={14} />
+              {publishDate ? `发布时间: ${publishDate.replace('T', ' ')}` : '设置发布时间'}
+            </button>
+            <button
+              onClick={() => setShowActionSheet(true)}
+              className="flex items-center gap-1 text-[12px] text-primary-600"
+            >
+              <ExternalLink size={14} />
+              转交专业审核
+            </button>
+          </div>
         </div>
-        <div className="flex items-center justify-center gap-4 mt-2">
-          <button
-            onClick={() => setShowSchedulePicker(true)}
-            className="flex items-center gap-1 text-[12px] text-neutral-500"
-          >
-            <CalendarIcon size={14} />
-            {publishDate ? `发布时间: ${publishDate}` : '设置发布时间'}
-          </button>
-          <button
-            onClick={() => setShowActionSheet(true)}
-            className="flex items-center gap-1 text-[12px] text-primary-600"
-          >
-            <ExternalLink size={14} />
-            转交专业审核
-          </button>
-        </div>
-      </div>
+      )}
 
       {activeSensitive && (
         <div
@@ -380,7 +510,7 @@ export default function DetailPage() {
               {favoriteOpinions.map((op) => (
                 <div
                   key={op.id}
-                  onClick={() => insertOpinion(op.content)}
+                  onClick={() => insertOpinion(op.id, op.content)}
                   className="p-3 bg-neutral-50 rounded-xl cursor-pointer active:bg-neutral-100 transition-colors"
                 >
                   <p className="text-[14px] text-neutral-800 mb-1.5">{op.content}</p>
@@ -409,7 +539,7 @@ export default function DetailPage() {
                 .map((op) => (
                   <div
                     key={op.id}
-                    onClick={() => insertOpinion(op.content)}
+                    onClick={() => insertOpinion(op.id, op.content)}
                     className="p-3 bg-neutral-50 rounded-xl cursor-pointer active:bg-neutral-100 transition-colors"
                   >
                     <p className="text-[14px] text-neutral-800 mb-1.5">{op.content}</p>
@@ -459,8 +589,9 @@ export default function DetailPage() {
                 取消
               </button>
               <button
-                onClick={() => setShowSchedulePicker(false)}
-                className="flex-1 h-11 bg-primary-600 text-white rounded-xl text-[14px] font-medium"
+                onClick={handleSetPublishTime}
+                disabled={!publishDate}
+                className="flex-1 h-11 bg-primary-600 text-white rounded-xl text-[14px] font-medium disabled:opacity-50"
               >
                 确定
               </button>
@@ -478,14 +609,24 @@ export default function DetailPage() {
             className="w-full max-w-[480px] bg-neutral-100 rounded-t-3xl p-4 space-y-2 animate-slide-in-right"
             onClick={(e) => e.stopPropagation()}
           >
+            <p className="text-[12px] text-neutral-500 text-center pb-2">选择转交对象</p>
             <div className="bg-white rounded-2xl overflow-hidden">
-              <button className="w-full h-12 text-[15px] text-primary-600 font-medium border-b border-neutral-100">
+              <button
+                onClick={() => handleForward('内容安全审核组')}
+                className="w-full h-12 text-[15px] text-primary-600 font-medium border-b border-neutral-100"
+              >
                 转交给内容安全审核组
               </button>
-              <button className="w-full h-12 text-[15px] text-primary-600 font-medium border-b border-neutral-100">
+              <button
+                onClick={() => handleForward('法律合规组')}
+                className="w-full h-12 text-[15px] text-primary-600 font-medium border-b border-neutral-100"
+              >
                 转交给法律合规组
               </button>
-              <button className="w-full h-12 text-[15px] text-primary-600 font-medium">
+              <button
+                onClick={() => handleForward('专业编辑审核')}
+                className="w-full h-12 text-[15px] text-primary-600 font-medium"
+              >
                 转交给专业编辑审核
               </button>
             </div>
@@ -495,6 +636,64 @@ export default function DetailPage() {
             >
               取消
             </button>
+          </div>
+        </div>
+      )}
+
+      {showHistory && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center animate-fade-in"
+          onClick={() => setShowHistory(false)}
+        >
+          <div
+            className="w-full max-w-[480px] bg-white rounded-t-3xl max-h-[70vh] overflow-hidden animate-slide-in-right"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white px-5 py-4 border-b border-neutral-100 z-10">
+              <div className="w-12 h-1 bg-neutral-200 rounded-full mx-auto mb-3" />
+              <div className="flex items-center justify-between">
+                <h3 className="text-[16px] font-semibold text-neutral-900">审核历史</h3>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="text-neutral-400"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto max-h-[60vh] p-4">
+              <div className="relative">
+                <div className="absolute left-[11px] top-2 bottom-2 w-px bg-neutral-200" />
+                {article.reviewHistory?.slice().reverse().map((record, idx) => (
+                  <div key={record.id} className="relative pl-8 pb-5">
+                    <div className="absolute left-0 top-0.5 w-[22px] h-[22px] rounded-full bg-white border-2 border-neutral-200 flex items-center justify-center">
+                      {getActionIcon(record.action)}
+                    </div>
+                    <div className="bg-neutral-50 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[13px] font-medium text-neutral-800">
+                          {getActionLabel(record.action)}
+                        </span>
+                        <span className="text-[11px] text-neutral-400">{record.time}</span>
+                      </div>
+                      <p className="text-[12px] text-neutral-600">
+                        审核人：{record.reviewer}
+                      </p>
+                      {record.forwardedTo && (
+                        <p className="text-[12px] text-purple-600 mt-1">
+                          转交给：{record.forwardedTo}
+                        </p>
+                      )}
+                      {record.opinion && (
+                        <p className="text-[13px] text-neutral-700 mt-2 pt-2 border-t border-neutral-200">
+                          {record.opinion}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
